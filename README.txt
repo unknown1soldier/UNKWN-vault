@@ -1,150 +1,199 @@
-UNKNWN: encrypted burn-after-reading vault (PyQt5). Runs fully offline.
+# UNKNWN
 
-Transactional storage and crash recovery
-  - File and folder sealing writes encrypted ciphertext to a same-volume staging file, flushes it, then records an authenticated transaction before promoting it and atomically updating the encrypted index.
-  - Burn and view-count changes use the same signed write-ahead journal. A confirmed burn resumes after authentication if interrupted; an uncommitted seal leaves the original source untouched.
-  - Opening a file consumes its view in the authenticated index before showing it. If the app exits while the last-view burn animation is still running, the next successful password or recovery-word authentication finishes burning every exhausted item through the same journal before opening the vault.
-  - Recovery verifies the journal MAC, base/next index state, and staged ciphertext checksum before changing storage. Conflicting or unverifiable state fails closed and offers a recovery screen instead of silently opening a mixed vault.
-  - At authentication, every indexed ciphertext must exist as a safe, single-link regular file. Missing or unsafe indexed objects block vault access without rewriting the authenticated index or renaming unrelated orphan evidence.
-  - Config/index saves use flushed temporary files, atomic replacement, a last-good backup, and directory flushes where supported. Interrupted key rotation verifies staged checksums before rolling forward.
-  - These mechanisms protect application-level consistency across process exits and supported filesystem flush boundaries; they cannot protect against failing storage hardware, filesystem/driver bugs, or guarantee physical erasure. On Windows, file data is flushed but directory metadata is not explicitly flushed, so survival of directory-entry changes through sudden power loss is not guaranteed. Keep independent backups of important originals and recovery words.
-  - Panic Wipe and Self-destruct first persist an UNKNWN-owned cleanup journal, then clear supported portable/per-user vaults, managed named profiles, active-location state, the profile list, recovery/transaction state, logs, and app-managed decrypted temp files. Startup blocks normal profile access and resumes an interrupted authorized cleanup. A failed cleanup retains the journal and blocks vault use until retry succeeds. Panic Wipe leaves its data roots available for reuse; Full Self-destruct removes the recognized data-root directories and their known state sidecars. Full Self-destruct is available only from a verified packaged Windows installation; a source/development run or modified/unverifiable package is refused before data cleanup begins.
-  - Full Self-destruct stages a temporary PowerShell recovery helper in the user's profile and registers the exact `HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce\!UNKNWN-SelfDestruct-Recovery` value before wiping data. If a startup cleanup attempt fails, it records the failure in the cleanup journal and registers the alternate exact `!UNKNWN-SelfDestruct-Recovery-Retry` value so Windows consuming the current RunOnce entry cannot strand recovery. The helper waits for the main process to exit, removes only recognized UNKNWN data roots and files from the verified signed-package inventory, rejects reparse points and unlisted package content, and retries locked-file removal on subsequent attempts. It does not recursively delete the installation root or use a generic temporary-directory cleanup. After verifying that app and data cleanup succeeded, it creates or verifies `%USERPROFILE%\Downloads\meow.txt` with exactly the bytes `meow`, removes its own helper and only matching UNKNWN RunOnce values, then requests a normal (non-forced) 10-second Windows restart. The journal is removed only after the restart request starts; if that request fails, the helper, RunOnce recovery, and journal are restored/retained. A conflicting marker is preserved and stops finalization for recovery. If the initial registry value cannot be created, cleanup does not begin; no other Registry entries are targeted.
-  - Wipe operations do not follow symbolic links outside the target. File overwrite is best-effort; deletion and directory-removal failures are surfaced instead of being silently treated as success.
+**UNKNWN** is an offline, encrypted, burn-after-reading vault for Windows.
 
-Vault Health and local diagnostics
-  - Activity Center keeps a live session timeline and encrypted, bounded history for up to 50 sessions plus 300 sign-in records. Each retained session has its own log-view button. Passwords, recovery words, and file contents are excluded; disabling encrypted activity history or enabling erase-on-exit stops retention.
-  - Health checks run in a background worker, authenticate the existing release-integrity state, authenticate the encrypted index, and stream-verify each indexed encrypted item without changing vault data. Results are pass, fail, warning, or unavailable; development builds are warnings, not passes, and no score is calculated.
-  - Diagnostics reads only bounded local security-event, crash/error, and integrity logs. It redacts sensitive fields and path-like identifiers, uses plain-text rendering, and explicitly reports missing or malformed sources. It does not export reports or access the network.
-  - `log_security_event` remains best-effort local logging when called and is separate from the encrypted sign-in-history setting. Crash-log writes are suppressed in Ghost Mode. Sign-in history remains in Activity Center and follows its existing settings.
-Vault management and accessibility
-  - The vault list can be searched using visible names, file types, sizes, or item IDs, and sorted by type or size. When file-name masking is enabled, search text excludes decrypted names.
-  - Local Easter Egg message pools are embedded as immutable tuples in `easter_egg_messages.py`. They include progress flavor text, cancellation quips after cancellation is requested, harmless zero-result search text, a Nothing button in Overview, and a WARDEN status quip that does not replace actual security status.
-  - Searching the exact phrase `!FUCK THIS SHIT` once per profile applies a temporary pastel theme and the supplied `assets/uwu_kawaii.jpg`; it restores the previous in-memory palette after 20 seconds or when the vault is locked. It does not save or alter the user's theme settings.
-  - File and folder sealing show a review with an estimated encrypted output size and check available destination space with a safety margin. These are estimates; changing storage conditions or compression can affect the result.
-  - File and folder sealing run as cancelable background operations. An incomplete ciphertext stage is removed only when its recorded file identity still matches; committed items remain committed, and source removal occurs only after a successful commit when explicitly enabled.
-  - Folder review includes file/folder counts, total bytes, and a file-type size breakdown. ZIP creation uses deflate for ordinary files and stores recognized already-compressed formats without a second compression pass.
-  - Vault Statistics & Duplicates reports authenticated metadata totals and compares exact-size candidates by streaming authenticated plaintext hashes. It never removes items; authentication failures are reported and no duplicate claim is made for failed items.
-  - The Operation Center shows active/recent work, progress, elapsed time, cancellation, and recovery/failure state for supported background operations.
-  - Reliability controls currently include revision-checked in-memory file states for vault view/removal actions, no-write preflight previews that are revalidated against current file revisions before execution, explicit Ghost Mode setting dependencies, and bounded sanitized operation outcome summaries. Significant background workers and vault file actions require a terminal report; a missing worker report is marked incomplete and requires review. These are not yet a durable all-operation state machine or a universal simulation/reporting pipeline; state and reports are process-local, and other operation paths still need integration and failure-injection validation.
-  - Settings remain live-applied and saved immediately. Settings changes are persisted through the crash-safe config replacement before the new snapshot is published to the live session; protected-settings snapshots are part of the same config save. A confirmed Reset all settings action restores recognized preferences to built-in defaults; protected preferences require the existing settings-password unlock, and unknown extension keys are preserved.
-  - Read, write, and destructive capabilities are checked against authentication, read-only mode, and pending recovery before key vault actions. The Diagnostics Center includes an offline dependency advisor for required crypto/UI packages and optional PDF/7z/RAR viewers; it never installs packages or makes network requests.
-  - Settings > Controls provides session-only undo/redo for reversible non-security preferences, including a grouped settings reset. Protected security settings are excluded, and undo/redo never reverses vault operations or file changes.
-  - Settings > Shortcut manager requires a single modified key combination, rejects common reserved shortcuts, reports in-app conflicts, and reports Windows global-registration failures. Global capture remains optional; selecting an action does not bypass the existing destructive-action confirmation policy.
-  - Moving the data folder runs in a cancellable background worker, uses an OS destination lock to prevent concurrent moves, refuses destination conflicts, and checks available space before copying and again before activation. It hashes an inventory of ordinary data files, copies vault ciphertext/configuration bytes without decrypting them, independently verifies the staged tree, and activates it only after rechecking the unchanged source. The original data folder is retained as a backup; it is never deleted by the move. A small profile-level location selector keeps that backup from being selected as active after restart. File modification timestamps are preserved; directory timestamps, ACLs, and ownership are not cloned, so destination permissions may inherit from the destination parent.
-  - An authenticated, vault-key-derived move journal records crash state. A verified staged copy may be activated after restart only after re-verifying the stage and source. An ambiguous copy is not auto-resumed or cleaned up; the app reports the preserved source, stage, and recovery journal. If cleanup fails, the exact staging/recovery state is retained for review.
-  - Settings > Account provides vault-profile Import/Export. Imported vaults are independently named profiles stored under UNKNWN's managed user-data directory and selected from the startup profile chooser; each profile retains its own master-password wrapper. Export can retain the active vault password or use a separate package password, which becomes the imported profile's master password. Import verifies package authentication, inventory, and encrypted items before activating the new profile. The package is retained by default, with an explicit option to delete it after import. Import requires restarting UNKNWN before the imported profile can be opened.
-  - When no registered or existing vault is detected, the chooser offers only New vault and Import vault; it does not create a blank Default profile. Existing legacy vault data is still registered for selection.
-  - Package operations run in the background and offer pause/resume and cancellation. In-process resume continues a paused operation; after interruption, the profile chooser can restart the operation from its package or source using a saved recovery record. Passwords are not stored in recovery records. Export recovery starts a new package at a newly selected destination rather than resuming a partial ZIP.
-  - Settings > Appearance includes an opt-in reduced-motion preference. It pauses animated backgrounds and decorative hover/ripple, entrance, startup, and tab fades. Login and security workflow animations remain unchanged.
-  - Settings > Appearance can also pause animated backgrounds whenever UNKNWN is minimized or not focused; disabling this option lets animations continue while the window is visible but unfocused. Backgrounds do not animate while minimized or hidden.
-  - Creating a new vault requires explicit agreement to the UNKNWN Terms of Service and Responsible Use Policy supplied by the project owner. Its styled link opens a responsive, scrollable dialog using the active theme. This user-provided policy is not a guarantee of legal enforceability; obtain qualified legal review before relying on it as a legal agreement.
-  - Existing-vault sign-in displays “Welcome back” with the local Windows profile name, or “operator” when name privacy is enabled. First-time setup does not show this returning-user greeting.
-  - The active vault header has a Switch profile action beside Lock and Panic wipe. It locks the current vault, clears its active key reference, shows a dedicated terminal-style profile handoff, then returns to the chooser. Each profile is opened with its own master password. Switching is refused while a vault operation/viewer is active or while a Maximum Security countdown is pending.
-  - The local clock sits beside the last-sign-in line in the vault and beside the greeting on the login screen. Click it to switch between 24-hour and 12-hour format; hold it to see the “Change clock format” hint. The choice is saved with the active profile's settings.
-  - Popup title-bar question-mark help is contextual: it explains the selected control and gives extra guidance for confirmation actions, cancellation, password entry, checkboxes, and read-only text.
-  - Startup quotes and the wordmark easter-egg note include an expanded set of original UNKNWN-style lines.
+> *the known for you will be unknown for others*
 
-Round 2 (look studio + key rotation)
-  - Look studio (Settings > Appearance): 9 themes, 17 animated and 11 still backgrounds, live preview, speed and density sliders,
-    terminal-style on/off, CRT scanlines on/off, your own photo. One place for all of it.
-  - Rotate vault key (Settings > Account): new random vault key, every file re-encrypted (streamed, verified), new password wrapper and NEW recovery words.
-    Crash-safe: a power cut at any point is finished automatically at the next start. Old copies of the data folder no longer protect/open anything new.
-  - Opening ordinary files uses streaming authenticated decryption. Audio/video disk playback decrypts chunk-by-chunk to a temporary file to reduce peak RAM; atomic saves retry if antivirus holds a file.
-  - Tests: python -m unittest tests.test_core  (crypto, crash safety, rotation incl. simulated power cuts, integrity, passwords, UI code paths).
-  - Diagnostics tests: python -m unittest tests.test_diagnostics
-  - Vault-management and storage-preflight tests: python -m unittest tests.test_vault_management
-  - Crash-safe data-movement and recovery tests: python -m unittest tests.test_vault_management_move
-  - If the protected-settings snapshot is missing or cannot be authenticated, sign-in requires an explicit reset to built-in security defaults; declining blocks sign-in. Valid older snapshots migrate missing protected settings to defaults.
-  - Settings-password, master-password, and recovery-word changes persist a candidate config before publishing it to the live session. If saving fails, the previous credential or lock remains active.
-  Terminal intro setting is now simply On/Off (one quote).
-  Privacy/security updates: vault item names, sizes, expiry and view counts are now encrypted and authenticated in index.json; old plaintext indexes migrate after successful authentication. Wrong-password counters and Maximum Security's 10-minute countdown are process-only, so edits to config.json cannot forge lockouts or a destructive order; closing UNKNWN cancels that countdown. Once a wipe is intentionally triggered, its separate cleanup journal is durable and restart-resumable. Password KDF work factor is bounded to the supported 128 MiB setting to prevent config tampering from causing excessive resource use. Unlock now distinguishes missing key-wrapper configuration from an actual memory-allocation failure; the strong KDF is unchanged.
-  A copied vault remains intentionally openable with its correct password or recovery words. A bounded offline-guess simulation tests wrong guesses; it does not prove a vault is impossible to crack. Ciphertext file sizes and random file counts/identifiers can still reveal approximate metadata. Full-disk encryption is recommended for device theft.
-  STILL NOT DONE: Windows DPAPI-bound persistent lockout counters, minimum-build (rollback) check, streaming the video temp file.
+UNKNWN is designed around local privacy, authenticated encrypted storage, crash-safe operations, and controlled destruction of vault data. It does not require network access for normal operation.
 
-Round 1 (security audit fixes + terminal look)
-  - Crash-safe saves (temp file + fsync + atomic replace + .bak); a bad index/config can no longer shred or overwrite your vault.
-    Unlisted .cdr files are renamed to .orphan instead of destroyed. A damaged config shows an error screen, not "Create vault".
-  - First-run routing checks for required vault-wrapper fields separately from runtime lock defaults, so an empty data folder opens vault setup rather than password login.
-  - Settings seal / settings password can no longer be switched off by deleting one field. Empty ciphertext is rejected.
-  - Release check is now an allow-list: ANY file not in the signed manifest fails it.
-  - Stronger password check (common words + digits/symbols rejected); recovery phrase is now 8 words (~67 bits). Old 6-word vaults still work.
-  - Terminal look: boot intro with one quote, terminal login, fake-decrypt unlock sequence, monospace UI, "% loaded" window for sealing/opening/burning (files 1 MB+).
-  - Self-destruct removes a validated packaged folder only after explicit confirmation and successful app-data cleanup; source/development folders are never removal targets. After cleanup, it writes a `meow` note in Downloads without overwriting an existing file, removes its temporary user-scoped RunOnce recovery artifacts, and requests a normal Windows restart with a 10-second countdown. Cleanup diagnostics are not written to the project or user profile.
-  Offline guessing against a copied vault is not prevented by app lockouts; use a unique, high-entropy password and keep recovery words private. No minimum-build check.
-  The GUI changes were not run on a real screen: test with  .\build.ps1 -Dev  first.
+## Features
 
-Files
-  unknwn.py            the app            unknwn_media.py   file-type detection + text/hex helpers (viewer)
-  unknwn_integrity.py  release checks     tools/release.py  keygen / embed / manifest / verify
-  build.ps1            Nuitka builder     verify_install.ps1  checks an installed copy's Authenticode signature
-  tests/               python -m unittest tests.test_media tests.test_diagnostics tests.test_viewer_flow tests.test_vault_management tests.test_vault_management_move tests.test_core tests.test_release
+### 🔐 Encrypted Vault
 
-Run (in this folder)
-  pip install -r requirements.txt
-  python unknwn.py
+- AES-256-GCM authenticated encryption.
+- Encrypted and authenticated vault metadata.
+- Password and recovery-word based authentication.
+- Streaming decryption for large files.
+- File and folder sealing with authenticated encrypted storage.
+- View-count and burn-after-reading support.
+- Optional read-only operation mode.
+- Vault profile support with independent master passwords.
 
-Build (Windows, PowerShell, in this folder)
-  pip install -r requirements.txt nuitka
-  .\build.ps1 -Dev      tested, unsigned build, labeled DEVELOPMENT BUILD, console stays open to show errors
-  .\build.ps1           full release pipeline: tests, Nuitka build, embedded app.ico, Authenticode signing, signed manifest, integrity and install verification, ZIP + SHA-256
-  .\build.ps1 -Build 2  release build with an explicit Windows file/product version and artifact number
+### 🛡️ Integrity & Security
 
-  Put app.ico or UNKNWN.ico in the project root (app.ico takes precedence when both exist). The release build embeds the selected icon
-  directly in UNKNWN.exe. The release build also requires the existing matching release_key.pem and release_pubkey.txt files,
-  a code-signing certificate with its private key in the Windows certificate store, signtool.exe (Windows SDK), and Visual Studio Build Tools
-  with the C++ x86/x64 workload. The build explicitly selects MSVC rather than falling back to Zig. It ships PyMuPDF's large generated
-  `mupdf.py` wrapper and native runtime files alongside the executable instead of compiling the wrapper into C, avoiding the translation
-  unit that previously took hours and exhausted MSVC's heap. Packaged builds disable Python bytecode caches so imports do not add unsigned
-  files to the integrity-checked distribution. Link-time optimization remains disabled. Application security behavior is unchanged.
-  Nuitka raises the effort required to inspect Python code but cannot prevent reverse engineering or protect secrets embedded in a binary.
-  The pipeline never creates or replaces release keys.
-  If creating the release identity for the first time, do so deliberately with `python tools\release.py keygen` and back up release_key.pem offline.
-  Set UNKNWN_CERT_THUMBPRINT and UNKNWN_KEY_PASS to skip the input prompts; otherwise build.ps1 asks for both (the passphrase prompt does not echo).
-  Do not put secrets in source files or build logs.
-  Build numbers must be 1 through 65535. A release build never overwrites an existing UNKNWN-build<number>.zip or its checksum; choose a new build number for each public release.
-  The release pipeline compiles from the staged build directory and checks that the final executable contains the configured Ed25519 public key before signing its manifest.
-  To change the encryption passphrase on the same Ed25519 release key (without changing its public identity), run
-  `python tools\release.py change-passphrase`; back up release_key.pem before changing it.
+- Signed release manifest and installation integrity verification.
+- Modified, missing, or unlisted packaged files can cause the release integrity check to fail.
+- Crash-safe configuration and vault-index updates.
+- Authenticated recovery and transaction state.
+- Security and diagnostic checks run locally.
+- No network requests are required for normal vault operation.
+- Sensitive authentication data is not stored in diagnostic or activity history.
 
-A compiled release build refuses to run if any file in its folder is changed, removed or added (executables). A build made any other way
-(plain `nuitka` command, no manifest) shows "Security Check Failed" on purpose: use -Dev for tests.
-Without an Authenticode certificate, someone can still swap the whole install for their own build; the check cannot stop that.
+UNKNWN is designed to reduce accidental data exposure, but it cannot guarantee physical data erasure. SSDs, backups, snapshots, failing hardware, and filesystem or driver behavior may retain data outside the application's control.
 
-Video/audio: Settings > Video/audio playback defaults to disk-backed streaming, which decrypts authenticated chunks directly to an app-owned temporary plaintext file and uses much less RAM for large media.
-The setting warns when changing playback modes; the default mode is also labeled as temporary plaintext in Settings. A crash or power loss can leave the temp file behind until the next app startup; cleanup is best-effort and overwrite-and-delete cannot guarantee physical erasure, especially on SSDs.
-"Memory" remains available to avoid an app-created media file, but holds the complete media in RAM and may be unsuitable for large files; OS paging can still write memory to disk. "Off" shows file info only. Ghost mode always overrides disk mode and uses memory only.
-Files can be sealed regardless of format. In-app previews currently include PDF; ZIP/7z/RAR member listings; text extraction from DOCX, XLSX, PPTX and EPUB;
-ISO-9660 directory listings; Windows PE metadata; and MIDI track/note metadata. Archive members are never extracted to disk, and programs are never executed.
-Office and e-book previews show text, not full page layout; MIDI is metadata-only, not synthesized audio. Other binary files show file information and a bounded hex preview.
-Video/audio codecs and less-common image decoders still depend on Qt/system support. Archive listing is capped to protect memory and responsiveness.
-The Vault tab can also seal an entire folder as one encrypted ZIP item. The ZIP is compressed directly into the authenticated encrypted stream; no intermediate plaintext archive is written to disk. Opening that item shows an in-app folder browser: use Back/Up or double-click a folder, then double-click a file or select it and choose Open. Search filters the current folder, sorting can use name, size, or type, and Stats summarizes safe ZIP metadata without extracting members. Files are routed through the normal in-app viewers (including media, images, PDFs, and the safe information/hex fallback for unsupported types); nested ZIP files can also be browsed. Members are read into memory, never extracted to disk, and individual members larger than 128 MiB are refused to limit memory use. Unsafe paths and symbolic links are not opened. If "Shred the original after sealing" is selected, only unchanged regular files captured in the folder snapshot are removed after sealing; symlinks are skipped and directories that are no longer empty are left in place.
-Viewer controls
-  - Video: Space toggles play/pause; Left/Right seek 5 seconds; Ctrl+Left/Ctrl+Right change speed (0.5x-2x); Up/Down change volume;
-    F toggles fullscreen and M toggles mute. The viewer shows elapsed/total time and has matching buttons and sliders.
-  - Photos: Zoom +/- and the mouse wheel zoom; drag in Pan mode to move around. Pin, Highlight, Erase mark, and Clear marks are session-only.
-    When exports are enabled, "Save marked copy" writes an edited image copy; "Save a decrypted copy..." saves the original decrypted image.
-    The sealed original is not changed.
-  - Memory-backed viewer flows and authenticated disk-backed audio/video previews show "Save a decrypted copy..." when exports are enabled.
-    Disk-backed copies are streamed to an atomic destination and checked against a digest captured during authenticated decryption; a changed
-    temporary source is rejected. Saving is user-initiated, refuses paths inside the encrypted vault folder, and does nothing if the picker is canceled.
-  - PDF: pages render from the decrypted in-memory bytes (no plaintext temporary file). Open a PDF from the Vault to launch the reader. The source app needs the PyMuPDF dependency from `requirements.txt`; standalone builds explicitly bundle its package. If the reader reports that PyMuPDF is missing, restart the app after installing the source dependencies or use a rebuilt package.
-    Use first/previous/next/last, enter a page number,
-    Zoom +/- or PageUp/PageDown, Fit page/width, or Ctrl+F to search text and highlight its first match.
-    Password-protected or malformed PDFs show a clear preview message; the original stays sealed.
-  - Click the UNKNWN wordmark three times quickly for a random original quote. Noir sentinel grain is deterministic and static.
-  - Destructive confirmations use terminal styling and explain the consequence. Overwrite attempts are best-effort; SSDs, flash storage,
-    snapshots, and backups may retain copies. The app does not claim guaranteed secure erasure.
-Look Studio includes animated binary digital rain, code rain, radar, terminal log, starfield, aurora, waves, bubbles, retro grid,
-orbit map, scan sweep, vector drift, data stream, cipher bars, rain on glass, tape reels and a midnight beacon.
-Still scenes include operator console, noir sentinel, case file, paper dossier, last train platform, midnight desk, signal room, gradient, solid, dots and your own photo.
-Still scenes use a restrained vignette and corner framing; the tape-reel scene has a richer animated deck. Still backgrounds stop the animation timer; Minimal performance mode pauses animated scenes. Retired background selections (including sweep lamp and signal pulse) migrate to Terminal log.
-Fire, ember trails, cursor sparks and button particles have been removed; older fire/ember selections also migrate to Terminal log. The preview and choices fade in briefly.
-The lock and panic-wipe transitions use a restrained terminal sequence. Main-tab changes use a brief fade, and their cards enter with staggered fades. The Panic Wipe button requires confirmation; its configured panic hotkey preserves the direct wipe action. The Self-destruct shortcut requires the same explicit double confirmation as the in-app action. The Shortcut manager rejects common system/editing combinations and reports Windows global-hotkey registration conflicts instead of claiming capture succeeded. Full self-destruct removes the supported vault/profile roots, their known state sidecars, and a dedicated packaged UNKNWN directory only when its signed manifest verifies with no unlisted files. Cleanup is recorded as complete only after the required data roots and sidecars are absent. The durable journal is kept through deferred installation removal; only after all designated cleanup succeeds does the helper request a Windows restart, without force-closing unrelated applications. Source/development folders and modified or unverifiable installations are retained for manual review; a source/development run does not request a restart. UNKNWN does not create app-specific Windows registry keys. The Activity Center shows current-session actions plus retained, individually viewable encrypted session logs and the encrypted sign-in history; file names and counts respect their privacy settings. Neither history records passwords, recovery words or file contents.
-The startup terminal intro shows local boot/integrity status, visual-only hex noise, and WARDEN sentinel status before authentication; after locking and unlocking without closing the app, a shorter access-restored sequence appears. Both can be skipped with a click or key.
-After a successful password or recovery unlock, a brief WARDEN identity sequence appears before the vault, randomly choosing from 200 unique ASCII illustrations embedded in the Python code. The same selector powers the profile easter egg and prevents an illustration from appearing twice consecutively. The wordmark and profile greeting align at the left of the application header; a theme-accented local clock badge sits at the right.
-The Overview tab summarizes the active profile/session, local installation-verification state, appearance, and selected privacy/history settings, with direct links to Vault Health, Diagnostics, Look Studio, and Settings. It is a local snapshot, not a complete security assessment or a fabricated/dated update feed. Privacy settings can replace the
-Windows account-name greeting with a generic operator greeting. Panic-shortcut configuration no longer asks for an execution confirmation; its setting warns that the
-selected action runs directly. The in-app Panic Wipe button keeps its explicit confirmation. Self-destruct always requires explicit double confirmation, including when selected for the panic shortcut. A durable cleanup journal makes both panic wipe and self-destruct restart-safe; a pending cleanup blocks profile access and retries on the next launch. Self-destruct removes supported vault/profile data roots and known state sidecars, then removes a packaged installation only if its signed manifest and complete file inventory validate. Source/development workspaces and unverifiable or modified installations are protected. Windows restart is requested only after all designated cleanup succeeds, without force-closing unrelated applications. A failed cleanup remains pending and does not restart the computer. UNKNWN does not create app-specific Windows registry keys to remove. After a regular wipe outro and deletion, the app queues its window restoration
-on the next Qt event-loop turn and preserves the prior normal/maximized/full-screen state without explicitly stealing focus.
-Serious unexpected errors and blocked/damaged-install screens include the support contact: unknown1soldier on Discord.
+### 💥 Panic Wipe & Self-Destruct
+
+UNKNWN provides destructive cleanup features with explicit confirmation and recovery-aware cleanup handling.
+
+- **Panic Wipe** clears supported UNKNWN-managed vault and profile data.
+- **Full Self-Destruct** can additionally remove a verified packaged installation.
+- Interrupted cleanup can resume after restart.
+- Modified or unverifiable installations are protected from full self-destruct.
+- Destructive operations do not follow symbolic links outside their target.
+- Cleanup failures are reported instead of being silently treated as successful.
+
+These features are not a guarantee of forensic or physical data destruction.
+
+### 📊 Vault Management
+
+- Search vault items by visible name, type, size, or item ID.
+- Sort and inspect authenticated metadata.
+- Vault statistics and duplicate detection.
+- Background operations with progress and cancellation.
+- Operation and activity monitoring.
+- Crash-safe data-folder movement.
+- Vault profile import/export.
+- Vault-key rotation with re-encryption and verification.
+
+### 👁️ Built-in Viewers
+
+UNKNWN can preview supported content without extracting archive members or executing programs.
+
+Supported preview capabilities include:
+
+- PDF
+- Images
+- Text
+- ZIP / 7z / RAR member listings
+- DOCX / XLSX / PPTX / EPUB text extraction
+- ISO-9660 directory listings
+- Windows PE metadata
+- MIDI metadata
+- Bounded hexadecimal previews
+- Audio/video playback
+
+Large media can use disk-backed streaming to reduce RAM usage. Temporary plaintext media files may remain after an unexpected crash until startup cleanup runs.
+
+### 🎨 Look Studio
+
+UNKNWN includes a customizable terminal-inspired interface with:
+
+- Multiple themes.
+- Animated and still backgrounds.
+- Live preview.
+- Animation speed and density controls.
+- Terminal-style interface options.
+- CRT scanlines.
+- Reduced-motion support.
+- Custom background photos.
+
+## Diagnostics
+
+UNKNWN includes local diagnostic and health checks that can:
+
+- Verify release integrity.
+- Authenticate the encrypted vault index.
+- Verify indexed encrypted items.
+- Inspect bounded local security and crash logs.
+- Report missing or malformed diagnostic sources.
+- Redact sensitive fields and path-like identifiers.
+
+Diagnostics do not require network access and do not install external packages.
+
+## Requirements
+
+- Windows
+- Python 3
+- Dependencies listed in `requirements.txt`
+
+For development:
+
+```powershell
+pip install -r requirements.txt
+python unknwn.py
+```
+
+## Development Build
+
+To run the development build pipeline:
+
+```powershell
+.\build.ps1 -Dev
+```
+
+Development builds are intended for testing and are not equivalent to signed production releases.
+
+## Release Build
+
+The release pipeline performs the project's tests, packaging, signing, manifest generation, integrity verification, and release artifact generation.
+
+```powershell
+.\build.ps1
+```
+
+A production release requires the appropriate Windows signing environment and release credentials.
+
+**Never commit private signing keys, passwords, certificates, or other secrets to the repository.**
+
+The public release key may be included in the repository where required for release verification.
+
+## Tests
+
+The project uses Python's `unittest` framework.
+
+Examples:
+
+```powershell
+python -m unittest tests.test_core
+python -m unittest tests.test_diagnostics
+python -m unittest tests.test_vault_management
+python -m unittest tests.test_vault_management_move
+```
+
+The complete test suite is available under `tests/`.
+
+## Project Structure
+
+```text
+UNKNWN/
+├── assets/
+├── tests/
+├── tools/
+├── build.ps1
+├── easter_egg.py
+├── easter_egg_messages.py
+├── operation_engine.py
+├── requirements.txt
+├── release_pubkey.txt
+├── SECURITY.md
+├── UNKNWN.ico
+├── unknwn.py
+├── unknwn_integrity.py
+├── unknwn_media.py
+├── verify_install.ps1
+└── warden_art.py
+```
+
+## Security Notes
+
+UNKNWN is intended to provide application-level protection for locally stored encrypted data.
+
+It does **not** claim to provide:
+
+- Guaranteed physical erasure.
+- Protection against compromised hardware or operating systems.
+- Protection against filesystem or driver failures.
+- Protection against every form of reverse engineering.
+- Protection against offline password guessing when an attacker possesses a copied vault.
+
+Use a strong, unique password and keep recovery words private.
+
+For important originals, maintain independent backups.
+
+## License
+
+See the repository for the applicable project licensing information.
+
+## Status
+
+UNKNWN is an actively developed project. Some security and reliability mechanisms may continue to evolve as additional testing and failure-injection coverage are added.
