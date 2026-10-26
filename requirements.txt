@@ -1,0 +1,5 @@
+PyQt5
+cryptography
+PyMuPDF>=1.24,<2
+py7zr>=1.0,<2
+rarfile>=4.2,<5
